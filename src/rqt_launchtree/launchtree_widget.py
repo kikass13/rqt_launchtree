@@ -10,22 +10,27 @@ import rospkg
 import roslaunch
 
 from rqt_launchtree.launchtree_loader import LaunchtreeLoader
-from rqt_launchtree.launchtree_config import LaunchtreeConfig, LaunchtreeArg, LaunchtreeRemap, LaunchtreeParam, LaunchtreeRosparam
+from rqt_launchtree.launchtree_config import LaunchtreeConfig, LaunchtreeArg, LaunchtreeRemap, LaunchtreeParam, LaunchtreeRosparam 
+from rqt_launchtree.launchtree_config import LaunchtreeMachine, LaunchtreeGroup 
 
 from python_qt_binding import loadUi
 from python_qt_binding.QtCore import Qt, Signal
 from python_qt_binding.QtGui import QIcon, QColor, QBrush
 from python_qt_binding.QtWidgets import QWidget, QFileDialog, QTreeWidgetItem
 
+import copy 
+
+
 class LaunchtreeEntryItem(QTreeWidgetItem):
-	_type_order = [dict, roslaunch.core.Node, LaunchtreeRosparam, roslaunch.core.Param, LaunchtreeRemap, LaunchtreeArg, object]
+	_type_order = [LaunchtreeMachine, LaunchtreeArg, dict, roslaunch.core.Node, LaunchtreeRosparam, roslaunch.core.Param, LaunchtreeRemap, object]
 	#inconsistent = False
 	def __init__(self, *args, **kw ):
 		super(LaunchtreeEntryItem, self).__init__(*args, **kw)
 		self.inconsistent = False
 	def __ge__(self, other):
-		own_type_idx = map(lambda t: isinstance(self.instance, t), self._type_order).index(True)
-		other_type_idx = map(lambda t: isinstance(other.instance, t), self._type_order).index(True)
+		if(self.instance):
+			own_type_idx = map(lambda t: isinstance(self.instance, t), self._type_order).index(True)
+			other_type_idx = map(lambda t: isinstance(other.instance, t), self._type_order).index(True)
 		if own_type_idx != other_type_idx:
 			return own_type_idx >= other_type_idx
 		return self.text(0) >= other.text(0)
@@ -40,13 +45,17 @@ class LaunchtreeWidget(QWidget):
 	update_launch_view = Signal(object)
 	display_load_error = Signal(str, str)
 
-	def __init__(self, context):
+	def __init__(self, context, kikassMode=False):
 		super(LaunchtreeWidget, self).__init__()
-
+		self.kikassMode = kikassMode
 		self._rp = rospkg.RosPack()
 		self._rp_package_list = self._rp.list()
 		res_folder = os.path.join(self._rp.get_path('rqt_launchtree'), 'resource')
-		ui_file = os.path.join(res_folder, 'launchtree_widget.ui')
+		
+		if(self.kikassMode):
+			ui_file = os.path.join(res_folder, 'launchtree_widget_kikass_mode.ui')
+		else:
+			ui_file = os.path.join(res_folder, 'launchtree_widget.ui')
 		loadUi(ui_file, self)
 
 		self._block_load = True
@@ -54,7 +63,8 @@ class LaunchtreeWidget(QWidget):
 		self.editor = 'gedit' # configure via settings
 
 		self.setObjectName('LaunchtreeWidget')
-		self.reload_button.setIcon(QIcon.fromTheme('view-refresh'))
+		if(not self.kikassMode):
+			self.reload_button.setIcon(QIcon.fromTheme('view-refresh'))
 
 		self._properties_empty_ui = os.path.join(res_folder, 'properties_empty.ui')
 		self._properties_param_ui = os.path.join(res_folder, 'properties_param.ui')
@@ -62,6 +72,7 @@ class LaunchtreeWidget(QWidget):
 		self._icon_include = QIcon(os.path.join(res_folder, 'img/include.png'))
 		self._icon_node = QIcon(os.path.join(res_folder, 'img/node.png'))
 		self._icon_param = QIcon(os.path.join(res_folder, 'img/param.png'))
+		self._icon_machine = QIcon(os.path.join(res_folder, 'img/machine.png'))
 		self._icon_arg = QIcon(os.path.join(res_folder, 'img/arg.png'))
 		self._icon_remap = QIcon(os.path.join(res_folder, 'img/remap.png'))
 		self._icon_rosparam = QIcon(os.path.join(res_folder, 'img/rosparam_load.png'))
@@ -74,10 +85,11 @@ class LaunchtreeWidget(QWidget):
 		# connect signals
 		self.update_launch_view.connect(self._update_launch_view)
 		self.display_load_error.connect(self._display_load_error)
-		self.package_select.currentIndexChanged.connect(self.update_launchfiles)
-		self.launchfile_select.currentIndexChanged.connect(lambda idx: self.load_launchfile())
-		self.reload_button.clicked.connect(self.load_launchfile)
-		self.open_button.clicked.connect(self._root_open_clicked)
+		if(not self.kikassMode):
+			self.package_select.currentIndexChanged.connect(self.update_launchfiles)
+			self.launchfile_select.currentIndexChanged.connect(lambda idx: self.load_launchfile())
+			self.reload_button.clicked.connect(self.load_launchfile)
+			self.open_button.clicked.connect(self._root_open_clicked)
 		self.launch_view.currentItemChanged.connect(self.launch_entry_changed)
 		self.filter_nodes.toggled.connect(lambda t: self._filter_launch_view())
 		self.filter_params.toggled.connect(lambda t: self._filter_launch_view())
@@ -98,26 +110,41 @@ class LaunchtreeWidget(QWidget):
 		self.main_view.setCurrentIndex(0)
 
 		self.update_package_list()
-		
+	
+	def setPathContext(self, launchfilePath, stackPath):
+		self._cwd = stackPath
+		self._path = launchfilePath
+		self._file = os.path.basename(launchfilePath)
 
 	def block_load(self, do_block):
 		self._block_load = do_block
 
-	def load_launchfile(self):
+	def load_launchfile(self, filename=None, stack=None):
 		if self._block_load: return
+
+		if(self.kikassMode):
+			self.setPathContext(filename, stack)
+
 		self.launch_view.clear()
 		self.properties_content.setCurrentIndex(0)
 		self.main_view.setCurrentIndex(0)
-		filename = os.path.join(
-			self._rp.get_path(self.package_select.currentText()),
-			self.launchfile_select.currentText()
-		)
-		launchargs = roslaunch.substitution_args.resolve_args(self.args_input.text()).split(' ')
+
+		if(not self.kikassMode):
+			filename = os.path.join(
+				self._rp.get_path(self.package_select.currentText()),
+				self.launchfile_select.currentText()
+			)
+
+		launchargs = []
+		if(not self.kikassMode):
+			launchargs = roslaunch.substitution_args.resolve_args(self.args_input.text()).split(' ')
+
 		if os.path.isfile(filename):
 			self.progress_bar.setRange(0,0)
 			self._load_thread = threading.Thread(target=self._load_launch_items, args=[filename, launchargs])
 			self._load_thread.daemon = True
 			self._load_thread.start()
+
 
 	def _load_launch_items(self, filename, launchargs):
 		self._launch_config = LaunchtreeConfig()
@@ -125,6 +152,7 @@ class LaunchtreeWidget(QWidget):
 		try:
 			loader = LaunchtreeLoader()
 			loader.load(filename, self._launch_config, verbose=False, argv=['','',''] + launchargs)
+			#items = self.normalize_config_tree(self._launch_config.tree)
 			items = self.display_config_tree(self._launch_config.tree)
 		except Exception as e:
 			error_msg = re.sub(r'(\[?(?:/\w+)+\.launch\]?)',
@@ -138,12 +166,61 @@ class LaunchtreeWidget(QWidget):
 		self.update_launch_view.emit(items)
 
 
+	def normalize_config_tree(self, tree):
+		defaultMachine = LaunchtreeMachine(	"Local", "localhost", env_loader=None, ssh_port=22, user=None, password=None,
+											 assignable=True, env_args=[], timeout=None)
+		#d = { "None": {"instance" : defaultMachine, "content": {} } }
+		d = {None: []}
+		### find machines
+		currentMachine = None
+		newTree = self.normalize_config_tree_search(currentMachine, tree, d)
+
+		#print(d)
+		#### apply content to machines
+		#Nones = {}
+		#Dones = {}
+		#for machine, entry in d.items():
+		#	copyTree = copy.deepcopy(tree)
+			#print("==================")
+			#print(machine)
+			#print(len(copyTree.keys()))
+			#newTree = {}
+			#newNones = {}
+		#	newTree = self.normalize_config_tree_search(machine, tree)
+			#print(len(newTree.keys()))
+		#	d[machine]["content"] = newTree
+
+
+		for m, e in d.items():
+			print(m)
+			print(len(e))
+
+
+		items = self.display_config_tree(tree)
+		return items
+
+	def normalize_config_tree_search(self, machine, tree, d):
+		newTree = {}
+		for key, instance in tree.items():
+			print(type(instance))
+			#if isinstance(instance, dict):
+			#	newTree = self.normalize_config_tree_search(machine, instance, d)
+			#	d[machine].append(instance)
+			if isinstance(instance, LaunchtreeMachine):
+				d[instance.name] = [] #{"instance": instance, "content": []}
+				machine = instance.name
+				print("M %s" % machine)
+		return newTree
+
+
 	def display_config_tree(self, config_tree):
 		items = list()
+
 		for key, instance in config_tree.items():
 			if key == '_root': continue
 			i = LaunchtreeEntryItem()
 			i.instance = instance
+
 			if isinstance(i.instance, roslaunch.core.Param):
 				i.inconsistent = i.instance.inconsistent
 			if isinstance(instance, dict):
@@ -151,21 +228,34 @@ class LaunchtreeWidget(QWidget):
 				i.inconsistent = any(c.inconsistent for c in childItems)
 				i.addChildren(childItems)
 				i.instance = instance.get('_root', instance)
+			if isinstance(instance, LaunchtreeMachine):
+				i.setText(0, instance.name)
 			if isinstance(i.instance, dict):
 				i.setText(0, self._filename_to_label(key.split(':')[0]))
 				i.setIcon(0, self._icon_include if not i.inconsistent else self._icon_warn)
+			elif isinstance(instance, LaunchtreeArg):
+				i.setText(0, "%s = %s" % (instance.name, instance.value))
+				i.setIcon(0, self._icon_arg)
+			elif isinstance(i.instance, roslaunch.core.Node):
+				i.setText(0, "[%s] %s" % (i.instance.machine_name, i.instance.name))
+				i.setIcon(0, self._icon_node)
+			#elif isinstance(i.instance, LaunchtreeGroup):
+			#	i.setText(0, "xxx")
+			#	i.setIcon(0, self._icon_warn)
 			else:
 				i.setText(0, self._filename_to_label(key.split(':')[0]) if isinstance(i.instance, LaunchtreeRosparam) else
 					key.split(':')[0])
 				i.setIcon(0, 
 					self._icon_warn if i.inconsistent else 
-					self._icon_node if isinstance(i.instance, roslaunch.core.Node) else 
+					#self._icon_node if isinstance(i.instance, roslaunch.core.Node) else 
 					self._icon_param if isinstance(i.instance, roslaunch.core.Param) else 
 					self._icon_arg if isinstance(i.instance, LaunchtreeArg) else 
 					self._icon_remap if isinstance(i.instance, LaunchtreeRemap) else 
 					self._icon_rosparam if isinstance(i.instance, LaunchtreeRosparam) else 
+					self._icon_machine if isinstance(i.instance, LaunchtreeMachine) else
 					self._icon_default)
 			items.append(i)
+
 		return items
 
 	def _display_load_error(self, error_msg, help_msg):
@@ -188,16 +278,18 @@ class LaunchtreeWidget(QWidget):
 				self._rp_package_list
 			)
 		)
-		self.package_select.clear()
-		self.package_select.addItems(self._package_list)
-		self.package_select.setCurrentIndex(0)
+		if(not self.kikassMode):
+			self.package_select.clear()
+			self.package_select.addItems(self._package_list)
+			self.package_select.setCurrentIndex(0)
 
 	def update_launchfiles(self, idx):
 		package = self.package_select.itemText(idx)
 		folder = self._rp.get_path(package)
 		launchfiles = self._get_launch_files(folder)
-		self.launchfile_select.clear()
-		self.launchfile_select.addItems(launchfiles)
+		if(not self.kikassMode):
+			self.launchfile_select.clear()
+			self.launchfile_select.addItems(launchfiles)
 
 	def _get_launch_files(self, path):
 		return sorted(
@@ -220,6 +312,7 @@ class LaunchtreeWidget(QWidget):
 		return True
 
 	def launch_entry_changed(self, current, previous):
+		#print("launch_entry_changed()")
 		#clear properties
 		if current is None:
 			return
@@ -262,7 +355,7 @@ class LaunchtreeWidget(QWidget):
 			self.properties_content.setCurrentIndex(5)
 			self.remap_from.setText(data.from_topic)
 			self.remap_to.setText(data.to_topic)
-		elif isinstance(data, roslaunch.core.Machine):
+		elif isinstance(data, LaunchtreeMachine):
 			self.properties_content.setCurrentIndex(6)
 			self.machine_address.setText(str(data.address))
 			self.machine_port.setText(str(data.ssh_port))
@@ -284,11 +377,14 @@ class LaunchtreeWidget(QWidget):
 			self.file_name.setText(f)
 		elif isinstance(data, dict):
 			self.properties_content.setCurrentIndex(3)
-			(p, l) = self.launch_view.currentItem().text(0).split(self._launch_separator)
-			(d, f) = os.path.split(l)
-			self.file_package.setText(p)
-			self.file_name.setText(f)
-
+			try:
+				(p, l) = self.launch_view.currentItem().text(0).split(self._launch_separator)
+				(d, f) = os.path.split(l)
+				self.file_package.setText(p)
+				self.file_name.setText(f)
+			except Exception as e:
+				self.file_name.setText(os.path.join(self.launch_view.currentItem().text(0)))
+				self.file_package.setText(self._cwd)			
 
 		else:
 			self.properties_content.setCurrentIndex(0)
@@ -318,6 +414,8 @@ class LaunchtreeWidget(QWidget):
 			# arg
 			elif isinstance(entry.instance, LaunchtreeArg):
 				show = show_args
+			elif isinstance(entry.instance, LaunchtreeMachine):
+				show = True
 			# remap
 			elif isinstance(entry.instance, LaunchtreeRemap):
 				show = show_remaps
@@ -346,13 +444,14 @@ class LaunchtreeWidget(QWidget):
 		thread.start()
 
 	def _root_open_clicked(self):
-		filename = os.path.join(
-			self._rp.get_path(self.package_select.currentText()),
-			self.launchfile_select.currentText()
-		)
-		thread = threading.Thread(target=os.system, args=['%s %s' % (self.editor, filename)])
-		thread.daemon = True
-		thread.start()
+		if(not self.kikassMode):
+			filename = os.path.join(
+				self._rp.get_path(self.package_select.currentText()),
+				self.launchfile_select.currentText()
+			)
+			thread = threading.Thread(target=os.system, args=['%s %s' % (self.editor, filename)])
+			thread.daemon = True
+			thread.start()
 
 
 	def shutdown(self):

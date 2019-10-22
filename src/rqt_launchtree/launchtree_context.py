@@ -13,6 +13,10 @@ class LaunchtreeContext(LoaderContext):
 			self._config.add_arg(name, default, value, doc)
 		return result
 
+	def add_group(self, ns, context):
+		if self._config is not None:
+			self._config.add_group(ns, context)
+
 	def add_remap(self, remap):
 		result = super(LaunchtreeContext, self).add_remap(remap)
 		if self._config is not None:

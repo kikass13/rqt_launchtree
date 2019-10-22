@@ -4,5 +4,10 @@ import sys
 
 from rqt_gui.main import Main
 
+
+### normal rosrun to start this plugins:
+###		rosrun rqt_launchtree rqt_launchtree  
+### extra commandline arguments can be given  with:
+### rosrun rqt_launchtree rqt_launchtree  xaxa:=stuff
 main = Main()
 sys.exit(main.main(standalone='rqt_launchtree.launchtree_plugin.LaunchtreePlugin'))

@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 import rospy
 from roslaunch.config import ROSLaunchConfig
-from roslaunch.core import Param
+from roslaunch.core import Param, Machine
+
+
+import collections
 
 class LaunchtreeArg(object):
 	def __init__(self, name, default=None, value=None, doc=None):
@@ -16,6 +19,11 @@ class LaunchtreeArg(object):
 			self.value = other.value
 		if self.doc is None and other.doc is not None:
 			self.doc = other.doc
+
+class LaunchtreeGroup(object):
+	def __init__(self, ns, context):
+		self.ns = ns
+		self.context = context
 
 class LaunchtreeRemap(object):
 	def __init__(self, from_topic, to_topic):
@@ -32,14 +40,20 @@ class LaunchtreeRosparam(object):
 		self.command = command
 		self.filename = filename
 
+class LaunchtreeMachine(Machine):
+	def __init__(self, name, address, env_loader=None, ssh_port=22, user=None, password=None, assignable=True, env_args=[], timeout=None):
+		super(LaunchtreeMachine, self).__init__(name, address, env_loader, ssh_port, user, password, assignable, env_args, timeout) 
+
 class LaunchtreeConfig(ROSLaunchConfig):
 
 	def __init__(self):
 		super(LaunchtreeConfig, self).__init__()
 
 		self._tree_stack = list()
-		self.tree = dict()
+		#self.tree = dict()
+		self.tree = collections.OrderedDict()
 		self.idx = 0
+		self.machines = collections.OrderedDict()
 
 	def push_level(self, tree_level, unique=False):
 		if unique:
@@ -92,7 +106,24 @@ class LaunchtreeConfig(ROSLaunchConfig):
 
 	def add_machine(self, m, verbose=True):
 		result = super(LaunchtreeConfig, self).add_machine(m, verbose)
-		self._add_to_tree(m.name, m)
+		#self._add_to_tree(m.name, m)
+		#self.push_level(m.name)
+		### from:
+		### http://docs.ros.org/lunar/api/roslaunch/html/roslaunch.core.Machine-class.html
+		###		address
+		###		assignable
+		###		env_loader
+		###		name
+		###		password
+		###		ssh_port
+		###		timeout
+		###		user
+		#self.pop_level()
+		self._add_to_tree(m.name, LaunchtreeMachine(m.name, m.address, m.ssh_port, m.user, m.env_loader))
+		return result
+
+	def add_group(self, ns, context):
+		result = self._add_to_tree(ns, LaunchtreeGroup(ns, None))
 		return result
 
 	def add_test(self, test, verbose=True):
