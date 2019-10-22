@@ -455,7 +455,8 @@ class LaunchtreeWidget(QWidget):
 			### check for special symbols, so that we dont open a file
 			### instead we open nautilus or something for the dir
 			#validFilePath = True if re.match("^[a-zA-Z0-9_]*$", l) else False
-			isLaunchfile = True if ".launch" in os.path.basename(l) else False
+			testName = os.path.basename(l) 
+			isLaunchfile = True if ".launch" in testName or ".yaml" in testName else False
 			if(isLaunchfile):
 				filename = os.path.join(p, l)
 				commandArgs = ['%s %s' % (self.editor, filename)]
