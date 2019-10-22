@@ -7,9 +7,9 @@ from rosgraph.names import get_ros_namespace
 
 from rqt_launchtree.launchtree_context import LaunchtreeContext
 
-i = 0
-class LaunchtreeLoader(XmlLoader):
 
+class LaunchtreeLoader(XmlLoader):
+	groupIndex = 0
 	#def _pseudo_recurse_load(self, ros_config, tags, context, default_machine, is_core, verbose):
 	#	x = self._recurse_load(ros_config, tags, context, default_machine, is_core, verbose) 
 	#	return x
@@ -93,29 +93,32 @@ class LaunchtreeLoader(XmlLoader):
 
 
 	def _group_tag(self, tag, context, ros_config, default_machine, is_core, verbose):
-		global i
 		name = tag.tagName 
 		self._check_attrs(tag, context, ros_config, XmlLoader.GROUP_ATTRS) 
 		child_ns = self._ns_clear_params_attr(name, tag, context, ros_config) 
-		groupName = "" % child_ns.ns if child_ns.ns != "/" else "[%s]"%i 
-		#for subTag in [t for t in tag.childNodes if t.nodeType == DomNode.ELEMENT_NODE]: 
-		#	subName = subTag.tagName
-		#	if(subName == "machine"):
-		#		groupName, address = self.reqd_attrs(subTag, child_ns, ('name', 'address')) 
-		#		break
-		#print(groupName)		
-		#print("WTF ---- %s" % self._pseudo_recurse_load(ros_config, tag.childNodes, child_ns, default_machine, True, True) )
+		groupName = "" % child_ns.ns if child_ns.ns != "/" else "[%s]" % LaunchtreeLoader.groupIndex 
 
-		insertedLevel = ros_config.push_level(groupName)	
-		#print(insertedLevel)	
+		insertedLevel = ros_config.push_level(groupName)
 		default_machine = self._recurse_load(ros_config, tag.childNodes, child_ns, default_machine, is_core, verbose) 
-		groupName = ros_config._tree_stack[-1] + "%s" % default_machine.name
-		ros_config._tree_stack[-1] = groupName
-		#print("XXX : %s" %ros_config._tree_stack[-1])
-		context.add_group(groupName, context)
-
+		groupName = "%s %s" % (ros_config._tree_stack[-1], default_machine.name)
 		ros_config.pop_level()
-		i+=1
+
+#		ros_config._tree_stack[-1] = groupName
+		#ros_config.tree[groupName] = ros_config.tree.pop(insertedLevel)
+		#for k, v in ros_config.tree.items():
+#
+#			if(insertedLevel in k):
+#				print("WTF %s" % k)
+#				ros_config.tree[groupName] = ros_config.tree.pop(insertedLevel)
+#			#if(isinstance(v, dict)):
+#			#	if(insertedLevel in v.keys):
+#			#		print("NUF %s" % v)
+#		
+#		print(ros_config.tree.keys())
+
+
+		context.add_group(groupName, context, internalMachineInstance=default_machine)
+		LaunchtreeLoader.groupIndex += 1
 
 	def _include_tag(self, tag, context, ros_config, default_machine, is_core, verbose):
 		inc_filename = self.resolve_args(tag.attributes['file'].value, context)
@@ -160,6 +163,7 @@ class LaunchtreeLoader(XmlLoader):
 		return result
 
 	def _load_launch(self, launch, ros_config, is_core=False, filename=None, argv=None, verbose=True):
+		LaunchtreeLoader.groupIndex = 0
 		if argv is None:
 			argv = sys.argv
 		self._launch_tag(launch, ros_config, filename)

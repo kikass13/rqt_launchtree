@@ -48,23 +48,25 @@ class LaunchtreeWidget(QWidget):
 	def __init__(self, context, kikassMode=False):
 		super(LaunchtreeWidget, self).__init__()
 		self.kikassMode = kikassMode
+
 		self._rp = rospkg.RosPack()
 		self._rp_package_list = self._rp.list()
 		res_folder = os.path.join(self._rp.get_path('rqt_launchtree'), 'resource')
-		
+		uiPath = os.path.join(res_folder, 'ui')
+
 		if(self.kikassMode):
-			ui_file = os.path.join(res_folder, 'launchtree_widget_kikass_mode.ui')
+			ui_file = os.path.join(uiPath, 'launchtree_widget_kikass_mode.ui')
 		else:
-			ui_file = os.path.join(res_folder, 'launchtree_widget.ui')
+			ui_file = os.path.join(uiPath, 'launchtree_widget.ui')
 		loadUi(ui_file, self)
 
 		self._block_load = True
 
-		self.editor = 'gedit' # configure via settings
+		self.fileExplorer = 'nautilus' 	# configure via settings
+		self.editor = 'gedit' 			# configure via settings
 
 		self.setObjectName('LaunchtreeWidget')
-		if(not self.kikassMode):
-			self.reload_button.setIcon(QIcon.fromTheme('view-refresh'))
+		self.reload_button.setIcon(QIcon.fromTheme('view-refresh'))
 
 		self._properties_empty_ui = os.path.join(res_folder, 'properties_empty.ui')
 		self._properties_param_ui = os.path.join(res_folder, 'properties_param.ui')
@@ -88,8 +90,11 @@ class LaunchtreeWidget(QWidget):
 		if(not self.kikassMode):
 			self.package_select.currentIndexChanged.connect(self.update_launchfiles)
 			self.launchfile_select.currentIndexChanged.connect(lambda idx: self.load_launchfile())
-			self.reload_button.clicked.connect(self.load_launchfile)
 			self.open_button.clicked.connect(self._root_open_clicked)
+			self.reload_button.clicked.connect(self.load_launchfile)
+		else:
+			self.reload_button.clicked.connect(self.reload_launchfile)
+
 		self.launch_view.currentItemChanged.connect(self.launch_entry_changed)
 		self.filter_nodes.toggled.connect(lambda t: self._filter_launch_view())
 		self.filter_params.toggled.connect(lambda t: self._filter_launch_view())
@@ -119,8 +124,14 @@ class LaunchtreeWidget(QWidget):
 	def block_load(self, do_block):
 		self._block_load = do_block
 
+	def reload_launchfile(self):
+		self.load_launchfile(filename=self.lastFilename, stack=self.lastStack)
+
 	def load_launchfile(self, filename=None, stack=None):
 		if self._block_load: return
+
+		self.lastFilename = filename
+		self.lastStack = stack
 
 		if(self.kikassMode):
 			self.setPathContext(filename, stack)
@@ -223,13 +234,15 @@ class LaunchtreeWidget(QWidget):
 
 			if isinstance(i.instance, roslaunch.core.Param):
 				i.inconsistent = i.instance.inconsistent
-			if isinstance(instance, dict):
+			elif isinstance(instance, dict):
 				childItems = self.display_config_tree(instance)
 				i.inconsistent = any(c.inconsistent for c in childItems)
 				i.addChildren(childItems)
 				i.instance = instance.get('_root', instance)
+			
 			if isinstance(instance, LaunchtreeMachine):
 				i.setText(0, instance.name)
+
 			if isinstance(i.instance, dict):
 				i.setText(0, self._filename_to_label(key.split(':')[0]))
 				i.setIcon(0, self._icon_include if not i.inconsistent else self._icon_warn)
@@ -239,9 +252,6 @@ class LaunchtreeWidget(QWidget):
 			elif isinstance(i.instance, roslaunch.core.Node):
 				i.setText(0, "[%s] %s" % (i.instance.machine_name, i.instance.name))
 				i.setIcon(0, self._icon_node)
-			#elif isinstance(i.instance, LaunchtreeGroup):
-			#	i.setText(0, "xxx")
-			#	i.setIcon(0, self._icon_warn)
 			else:
 				i.setText(0, self._filename_to_label(key.split(':')[0]) if isinstance(i.instance, LaunchtreeRosparam) else
 					key.split(':')[0])
@@ -437,9 +447,22 @@ class LaunchtreeWidget(QWidget):
 
 
 	def _launch_open_clicked(self):
-		(p, l) = self.launch_view.currentItem().text(0).split(self._launch_separator)
-		filename = os.path.join(self._rp.get_path(p), l)
-		thread = threading.Thread(target=os.system, args=['%s %s' % (self.editor, filename)])
+		if(not self.kikassMode):
+			(p, l) = self.launch_view.currentItem().text(0).split(self._launch_separator)
+			filename = os.path.join(self._rp.get_path(p), l)
+		else:
+			(p, l) = (self._cwd, self.launch_view.currentItem().text(0))
+			### check for special symbols, so that we dont open a file
+			### instead we open nautilus or something for the dir
+			#validFilePath = True if re.match("^[a-zA-Z0-9_]*$", l) else False
+			isLaunchfile = True if ".launch" in os.path.basename(l) else False
+			if(isLaunchfile):
+				filename = os.path.join(p, l)
+				commandArgs = ['%s %s' % (self.editor, filename)]
+			else:
+				commandArgs = ['%s %s' % (self.fileExplorer, p)]
+
+		thread = threading.Thread(target=os.system, args=commandArgs)
 		thread.daemon = True
 		thread.start()
 

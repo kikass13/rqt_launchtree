@@ -159,6 +159,16 @@
               </property>
              </widget>
             </item>
+            <item>
+             <widget class="QPushButton" name="reload_button">
+              <property name="toolTip">
+               <string>Reload current launch file</string>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
            </layout>
           </widget>
          </item>

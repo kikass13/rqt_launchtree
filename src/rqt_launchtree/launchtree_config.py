@@ -21,9 +21,10 @@ class LaunchtreeArg(object):
 			self.doc = other.doc
 
 class LaunchtreeGroup(object):
-	def __init__(self, ns, context):
+	def __init__(self, ns, context, internalMachineInstance=None):
 		self.ns = ns
 		self.context = context
+		self.machine = internalMachineInstance
 
 class LaunchtreeRemap(object):
 	def __init__(self, from_topic, to_topic):
@@ -122,8 +123,8 @@ class LaunchtreeConfig(ROSLaunchConfig):
 		self._add_to_tree(m.name, LaunchtreeMachine(m.name, m.address, m.ssh_port, m.user, m.env_loader))
 		return result
 
-	def add_group(self, ns, context):
-		result = self._add_to_tree(ns, LaunchtreeGroup(ns, None))
+	def add_group(self, ns, context, internalMachineInstance=None):
+		result = self._add_to_tree(ns, LaunchtreeGroup(ns, None, internalMachineInstance=internalMachineInstance))
 		return result
 
 	def add_test(self, test, verbose=True):
